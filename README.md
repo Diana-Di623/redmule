@@ -284,3 +284,4 @@ See you, space cowboy!
 
 ### Acknowledgements
 This work received support from Swiss National Science Foundation Project 207913 "TinyTrainer: On-chip Training for TinyML devices"
+# redmule
