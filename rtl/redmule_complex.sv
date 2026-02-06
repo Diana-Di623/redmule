@@ -88,6 +88,7 @@ localparam int unsigned NumDemuxIdx = 2;
 localparam int unsigned NumDemuxRules = 3;
 
 logic busy;
+logic compute_active;
 logic s_clk, s_clk_en;
 logic [N_CORES-1:0][1:0] evt;
 logic [31:0] irq;
@@ -475,6 +476,7 @@ redmule_top #(
   .test_mode_i        ( test_mode_i                ),
   .evt_o              ( evt                        ),
   .busy_o             ( busy                       ),
+  .compute_active_o   ( compute_active             ),
   .tcdm               ( tcdm                       ),
   .xif_issue_if_i     ( core_xif.coproc_issue      ),
   .xif_result_if_o    ( core_xif.coproc_result     ),

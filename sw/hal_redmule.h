@@ -76,8 +76,10 @@ void redmule_cfg(unsigned int x, unsigned int w, unsigned int z, uint16_t m_size
   uint32_t mcfg_reg1 = 0;
   uint32_t arith_reg = 0;
 
-  mcfg_reg0 = (k_size << 16) | (m_size << 0);
-  mcfg_reg1 = n_size << 0;
+  // Force writing full tensor dimensions here for debugging/validation
+  // (override passed-in tile sizes to ensure accelerator receives full M/N/K)
+  mcfg_reg0 = (K_SIZE << 16) | (M_SIZE << 0);
+  mcfg_reg1 = (N_SIZE << 0);
 
   arith_reg = (gemm_op << 10) | (gemm_fmt << 7);
 

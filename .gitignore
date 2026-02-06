@@ -1,2 +1,9 @@
 .bender/git/checkouts/
 .bender/git/checkouts/
+.bender/
+vendor/
+sw/build/
+sw/inc/
+target/sim/verilator/
+golden-model/
+log/

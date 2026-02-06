@@ -286,3 +286,25 @@ See you, space cowboy!
 This work received support from Swiss National Science Foundation Project 207913 "TinyTrainer: On-chip Training for TinyML devices"
 # redmule
 # redmule
+第一步：复现参数，选用和论文一样的redmule12x4,pal=3
+eg.构建M=a,N=b,K=c的FP16矩阵
+```bash
+make golden OP=gemm M=a N=b K=c fp_fmt=FP16 SW=$(pwd)/sw 
+```
+软件编译
+```bash
+make sw-clean && make sw-build
+```
+硬件运行(加日志)
+```bash
+make hw-run target=verilator P_STALL=0|tee /media/kirin/E/linux/redmule/log sim_M axbxc _verify_fixed.log
+```
+cnt_rd//总内存读取
+cnt_wr//总写入
+start_cycle//TRIGGER发起时刻
+end_cycle//测试结束的时刻
+elapsed_cycles//包含配置、数据传输、加速器计算、结果比对等所有开销
+acc_compute_start_cycle//加速器开始实际执行算术运算的仿真 cycle（compute 窗口起点）
+acc_compute_end_cycle//加速器停止算术运算的仿真 cycle（compute 窗口终点）
+acc_ctrl_compute_cycles//纯计算周期数(论文的指标)
+

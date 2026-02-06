@@ -35,6 +35,7 @@ module redmule_top
   input  logic                    rst_ni     ,
   input  logic                    test_mode_i,
   output logic                    busy_o     ,
+  output logic                    compute_active_o ,
   output logic [N_CORES-1:0][1:0] evt_o      ,
   cv32e40x_if_xif.coproc_issue    xif_issue_if_i,
   cv32e40x_if_xif.coproc_result   xif_result_if_o,
@@ -50,7 +51,7 @@ localparam int unsigned DATAW_ALIGN = `HCI_SIZE_GET_DW(tcdm) - SysDataWidth;
 localparam int unsigned HCI_ECC = (`HCI_SIZE_GET_EW(tcdm)>1);
 
 logic                       enable, clear;
-logic                       reg_enable;
+  logic                       compute_active;
 logic                       start_cfg, cfg_complete;
 
 hwpe_ctrl_intf_periph #( .ID_WIDTH  (ID_WIDTH) ) local_periph ( .clk(clk_i) );
@@ -442,6 +443,7 @@ redmule_ctrl        #(
   .test_mode_i       ( test_mode_i             ),
   .flgs_streamer_i   ( flgs_streamer           ),
   .busy_o            ( busy_o                  ),
+  .compute_active_o  ( compute_active          ),
   .clear_o           ( clear                   ),
   .evt_o             ( evt_o                   ),
   .reg_file_o        ( reg_file                ),
@@ -456,11 +458,10 @@ redmule_ctrl        #(
   .periph            ( local_periph            )
 );
 
+  // propagate compute_active to module output
+  assign compute_active_o = compute_active;
 
-/*---------------------------------------------------------------*/
-/* |                        Local FSM                          | */
-/*---------------------------------------------------------------*/
-redmule_scheduler #(
+  redmule_scheduler #(
   .Height      ( Height         ),
   .Width       ( Width          ),
   .NumPipeRegs ( NumPipeRegs    )

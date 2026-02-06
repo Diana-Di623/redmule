@@ -28,6 +28,7 @@ module redmule_ctrl
   input  logic                    rst_ni            ,
   input  logic                    test_mode_i       ,
   output logic                    busy_o            ,
+  output logic                    compute_active_o  ,
   output logic                    clear_o           ,
   output logic [N_CORES-1:0][1:0] evt_o             ,
   output ctrl_regfile_t           reg_file_o        ,
@@ -60,6 +61,9 @@ module redmule_ctrl
   } redmule_ctrl_state_e;
 
   redmule_ctrl_state_e current, next;
+
+  // compute active when controller enters COMPUTING state
+  assign compute_active_o = (current == REDMULE_COMPUTING);
 
   hwpe_ctrl_package::ctrl_regfile_t reg_file_d, reg_file_q;
   hwpe_ctrl_package::ctrl_slave_t   cntrl_slave;

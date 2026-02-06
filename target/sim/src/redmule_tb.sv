@@ -296,7 +296,137 @@ module redmule_tb
   integer f_x, f_W, f_y, f_tau;
   logic start;
 
+  // cycle counter: counts clock cycles since reset
+  logic [63:0] cycle_count;
+  logic [63:0] start_cycle;
+  logic        trigger_seen;
+  logic [63:0] acc_running_cycle;
+  logic [63:0] acc_done_cycle;
+  logic        acc_running_seen;
+  logic        acc_done_seen;
+  logic [63:0] acc_busy_start_cycle;
+  logic [63:0] acc_busy_end_cycle;
+  logic        acc_busy_start_seen;
+  logic        acc_busy_end_seen;
+  logic        acc_busy_q;
+  logic        acc_compute_q;
+  logic [2:0]  acc_ctrl_state_q;
+  logic [63:0] acc_compute_start_cycle;
+  logic [63:0] acc_compute_end_cycle;
+  logic        acc_compute_start_seen;
+  logic        acc_compute_end_seen;
+
   int errors = -1;
+
+  // Count cycles and detect write to RedMulE trigger register
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (~rst_ni) begin
+      cycle_count  <= '0;
+      start_cycle  <= '0;
+      trigger_seen <= 1'b0;
+      acc_running_cycle <= '0;
+      acc_done_cycle    <= '0;
+      acc_running_seen  <= 1'b0;
+      acc_done_seen     <= 1'b0;
+      acc_busy_start_cycle <= '0;
+      acc_busy_end_cycle   <= '0;
+      acc_busy_start_seen  <= 1'b0;
+      acc_busy_end_seen    <= 1'b0;
+      acc_busy_q           <= 1'b0;
+      acc_ctrl_state_q       <= 3'd0;
+      acc_compute_start_cycle <= '0;
+      acc_compute_end_cycle   <= '0;
+      acc_compute_start_seen  <= 1'b0;
+      acc_compute_end_seen    <= 1'b0;
+    end else begin
+      cycle_count <= cycle_count + 1;
+      acc_busy_q  <= (i_dut.i_redmule_top.busy | i_dut.i_redmule_top.busy_o);
+      acc_ctrl_state_q <= i_dut.i_redmule_top.i_control.current;
+      // sample compute active signal exported from controller (more reliable)
+      acc_compute_q <= i_dut.i_redmule_top.compute_active_o;
+      if (!acc_busy_q && (i_dut.i_redmule_top.busy | i_dut.i_redmule_top.busy_o)) begin
+        if (!acc_busy_start_seen) begin
+          acc_busy_start_cycle <= cycle_count;
+          acc_busy_start_seen  <= 1'b1;
+          $display("[TB] - ACC BUSY asserted @ cycle=%0d", cycle_count);
+        end
+      end else if (acc_busy_q && !(i_dut.i_redmule_top.busy | i_dut.i_redmule_top.busy_o)) begin
+        if (!acc_busy_end_seen) begin
+          acc_busy_end_cycle <= cycle_count;
+          acc_busy_end_seen  <= 1'b1;
+          $display("[TB] - ACC BUSY deasserted @ cycle=%0d", cycle_count);
+        end
+      end
+      // Controller state sampling (fallback)
+      if (acc_ctrl_state_q != 3'd3 && i_dut.i_redmule_top.i_control.current == 3'd3) begin
+        if (!acc_compute_start_seen) begin
+          acc_compute_start_cycle <= cycle_count;
+          acc_compute_start_seen  <= 1'b1;
+          $display("[TB] - ACC COMPUTE state entered @ cycle=%0d", cycle_count);
+        end
+      end else if (acc_ctrl_state_q == 3'd3 && i_dut.i_redmule_top.i_control.current != 3'd3) begin
+        if (!acc_compute_end_seen) begin
+          acc_compute_end_cycle <= cycle_count;
+          acc_compute_end_seen  <= 1'b1;
+          $display("[TB] - ACC COMPUTE state exited @ cycle=%0d", cycle_count);
+        end
+      end
+      // New: detect compute_active transitions directly
+      if (!acc_compute_q && i_dut.i_redmule_top.compute_active_o) begin
+        if (!acc_compute_start_seen) begin
+          acc_compute_start_cycle <= cycle_count;
+          acc_compute_start_seen  <= 1'b1;
+          $display("[TB] - ACC COMPUTE active asserted @ cycle=%0d", cycle_count);
+        end
+      end else if (acc_compute_q && !i_dut.i_redmule_top.compute_active_o) begin
+        if (!acc_compute_end_seen) begin
+          acc_compute_end_cycle <= cycle_count;
+          acc_compute_end_seen  <= 1'b1;
+          $display("[TB] - ACC COMPUTE active deasserted @ cycle=%0d", cycle_count);
+        end
+      end
+
+      // Periodic global sample to track controller state over time
+      if ((cycle_count % 5000) == 0) begin
+        $display("[TB] - PERIODIC SAMPLE @ cycle=%0d ctrl_current=%0d busy=%b compute_active=%b", cycle_count, i_dut.i_redmule_top.i_control.current, i_dut.i_redmule_top.busy, i_dut.i_redmule_top.compute_active_o);
+      end
+      // detect write to RedMulE trigger (absolute address 0x0010_0000)
+      // configuration requests to the accelerator are routed to the HWPE peripheral
+      if (i_dut.periph.req) begin
+        $display("[TB] - periph.req addr=0x%08x wen=%b be=0x%0h data=0x%08x id=%0d @ cycle=%0d",
+                 i_dut.periph.add, i_dut.periph.wen, i_dut.periph.be,
+                 i_dut.periph.data, i_dut.periph.id, cycle_count);
+      end
+      // Debug sample during active window to observe internal signals periodically
+      if (trigger_seen && !acc_compute_end_seen && (cycle_count % 10) == 0) begin
+        $display("[TB] - SAMPLE @ cycle=%0d busy=%b busy_o=%b compute_active=%b ctrl_current=%0d", cycle_count, i_dut.i_redmule_top.busy, i_dut.i_redmule_top.busy_o, i_dut.i_redmule_top.compute_active_o, i_dut.i_redmule_top.i_control.current);
+      end
+      if (i_dut.periph.add == 32'h00100000) begin
+          if (!trigger_seen) begin
+            start_cycle  <= cycle_count;
+            trigger_seen <= 1'b1;
+            $display("[TB] - TRIGGER WRITE observed addr=0x%08x data=0x%08x wen=%b be=0x%0h id=%0d @ cycle=%0d",
+                     i_dut.periph.add, i_dut.periph.data, i_dut.periph.wen,
+                     i_dut.periph.be, i_dut.periph.id, cycle_count);
+            $display("[TB] - ctrl_current_at_trigger=%0d", i_dut.i_redmule_top.i_control.current);
+          end
+        end else if (i_dut.periph.add == 32'h00100010) begin
+          if (!acc_running_seen) begin
+            acc_running_cycle <= cycle_count;
+            acc_running_seen  <= 1'b1;
+            $display("[TB] - ACC RUNNING write observed addr=0x%08x data=0x%08x @ cycle=%0d",
+                     i_dut.periph.add, i_dut.periph.data, cycle_count);
+          end
+        end else if (i_dut.periph.add == 32'h00100008) begin
+          if (!acc_done_seen) begin
+            acc_done_cycle <= cycle_count;
+            acc_done_seen  <= 1'b1;
+            $display("[TB] - ACC FINISHED write observed addr=0x%08x data=0x%08x @ cycle=%0d",
+                     i_dut.periph.add, i_dut.periph.data, cycle_count);
+          end
+        end
+      end
+    end
   always_ff @(posedge clk_i)
   begin
     if((core_data_req.addr == 32'h80000000) &&
@@ -352,6 +482,32 @@ module redmule_tb
 
     $display("[TB] - cnt_rd=%-8d", cnt_rd);
     $display("[TB] - cnt_wr=%-8d", cnt_wr);
+    // Print cycle count info if trigger was observed
+    if (trigger_seen) begin
+      $display("[TB] - start_cycle=%0d", start_cycle);
+      $display("[TB] - end_cycle=%0d", cycle_count);
+      $display("[TB] - elapsed_cycles=%0d", cycle_count - start_cycle);
+      if (acc_running_seen)
+        $display("[TB] - acc_running_cycle=%0d", acc_running_cycle);
+      if (acc_done_seen)
+        $display("[TB] - acc_done_cycle=%0d", acc_done_cycle);
+      if (acc_running_seen && acc_done_seen)
+        $display("[TB] - acc_compute_cycles=%0d", acc_done_cycle - acc_running_cycle);
+      if (acc_busy_start_seen)
+        $display("[TB] - acc_busy_start_cycle=%0d", acc_busy_start_cycle);
+      if (acc_busy_end_seen)
+        $display("[TB] - acc_busy_end_cycle=%0d", acc_busy_end_cycle);
+      if (acc_busy_start_seen && acc_busy_end_seen)
+        $display("[TB] - acc_busy_cycles=%0d", acc_busy_end_cycle - acc_busy_start_cycle);
+      if (acc_compute_start_seen)
+        $display("[TB] - acc_compute_start_cycle=%0d", acc_compute_start_cycle);
+      if (acc_compute_end_seen)
+        $display("[TB] - acc_compute_end_cycle=%0d", acc_compute_end_cycle);
+      if (acc_compute_start_seen && acc_compute_end_seen)
+        $display("[TB] - acc_ctrl_compute_cycles=%0d", acc_compute_end_cycle - acc_compute_start_cycle);
+    end else begin
+      $display("[TB] - trigger not observed; elapsed_cycles=unknown");
+    end
     if(errors != 0) begin
       $display("[TB] - Fail!");
       $error("[TB] - errors=%08x", errors);
